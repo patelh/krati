@@ -6,6 +6,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.log4j.Logger;
 
+import java.io.Closeable;
 import krati.Persistable;
 import krati.array.DataArray;
 import krati.array.LongArray;
@@ -33,7 +34,7 @@ import krati.core.segment.SegmentOverflowException;
  * @author jwu
  *
  */
-public class SimpleDataArray implements DataArray, Persistable
+public class SimpleDataArray implements DataArray, Persistable, Closeable
 {
     private final static Logger _log = Logger.getLogger(SimpleDataArray.class);
     
@@ -802,5 +803,11 @@ public class SimpleDataArray implements DataArray, Persistable
                 _segmentManager.updateMeta();
             }
         }
+    }
+
+    @Override
+    public final void close() throws IOException
+    {
+        _segmentManager.close();
     }
 }

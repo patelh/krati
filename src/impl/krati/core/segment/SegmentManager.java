@@ -1,5 +1,6 @@
 package krati.core.segment;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.FileFilter;
 import java.io.IOException;
@@ -42,7 +43,7 @@ import org.apache.log4j.Logger;
  * @author jwu
  *
  */
-public final class SegmentManager
+public final class SegmentManager implements Closeable
 {
     private final static Logger _log = Logger.getLogger(SegmentManager.class);
     private final static Map<String, SegmentManager> _segManagerMap = new HashMap<String, SegmentManager>();
@@ -354,4 +355,12 @@ public final class SegmentManager
         return mgr;
     }
     
+    @Override
+    public final void close() throws IOException
+    {
+      for(Segment s: _segList)
+      {
+          s.close();
+      }
+    }
 }

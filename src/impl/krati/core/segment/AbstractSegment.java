@@ -219,4 +219,11 @@ public abstract class AbstractSegment implements Segment
     {
         return (_segMode == Segment.Mode.READ_ONLY);
     }
+
+    @Override
+    public final void close() throws IOException
+    {
+        if(_raf!=null)
+            _raf.close();
+    }
 }

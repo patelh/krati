@@ -1,5 +1,6 @@
 package krati.core.segment;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -8,7 +9,6 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 
 import org.apache.log4j.Logger;
-
 /**
  * SegmentMeta: Meta Data for Segments
  * 
@@ -27,7 +27,7 @@ import org.apache.log4j.Logger;
  * 
  * @author jwu
  */
-public class SegmentMeta
+public class SegmentMeta implements Closeable
 {
     private final static Logger _log = Logger.getLogger(SegmentMeta.class);
     
@@ -272,5 +272,12 @@ public class SegmentMeta
         
         _log.info(_metaFile.getCanonicalPath() + " updated");
         _log.info("workingGeneration=" + _workingGeneration + " liveSegmentCount=" + _liveSegmentCount);
+    }
+
+    @Override
+    public final void close() throws IOException
+    {
+        if(_raf!=null)
+            _raf.close();
     }
 }

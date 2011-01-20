@@ -1,5 +1,6 @@
 package krati.core.segment;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.channels.WritableByteChannel;
@@ -42,7 +43,7 @@ import java.nio.channels.WritableByteChannel;
  * @author jwu
  *
  */
-public interface Segment
+public interface Segment extends Closeable
 {
     public final static long STORAGE_VERSION = 1;
     

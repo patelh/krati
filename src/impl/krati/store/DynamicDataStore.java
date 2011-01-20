@@ -1,5 +1,6 @@
 package krati.store;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -30,7 +31,7 @@ import krati.util.HashFunction;
  * @author jwu
  *
  */
-public class DynamicDataStore implements DataStore<byte[], byte[]>
+public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
 {
     private final static Logger _log = Logger.getLogger(DynamicDataStore.class);
     
@@ -727,5 +728,14 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>
     public Iterator<Entry<byte[], byte[]>> iterator()
     {
         return new DataStoreIterator(_dataArray, _dataHandler);
+    }
+
+    @Override
+    public final void close() throws IOException
+    {
+        if(this._dataArray!=null)
+            _dataArray.close();
+        if(this._addrArray!=null)
+            _addrArray.close();
     }
 }

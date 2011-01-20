@@ -1,5 +1,6 @@
 package krati.core.array.basic;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.List;
@@ -10,7 +11,7 @@ import krati.core.array.entry.Entry;
 import krati.core.array.entry.EntryFactory;
 import krati.core.array.entry.EntryValue;
 
-abstract class AbstractRecoverableArray<V extends EntryValue> implements RecoverableArray<V>
+abstract class AbstractRecoverableArray<V extends EntryValue> implements RecoverableArray<V>, Closeable
 {
   static final Logger _log = Logger.getLogger(RecoverableArray.class);
   
@@ -168,5 +169,11 @@ abstract class AbstractRecoverableArray<V extends EntryValue> implements Recover
   public void updateArrayFile(List<Entry<V>> entryList) throws IOException
   {
     _arrayFile.update(entryList);
+  }
+
+  @Override
+  public final void close() throws IOException
+  {
+    _arrayFile.close();
   }
 }
