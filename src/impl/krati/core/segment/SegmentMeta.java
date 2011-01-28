@@ -278,6 +278,9 @@ public class SegmentMeta implements Closeable
     public final void close() throws IOException
     {
         if(_raf!=null)
+        {
             _raf.close();
+            _raf=null;
+        }
     }
 }

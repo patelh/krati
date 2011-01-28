@@ -178,6 +178,7 @@ abstract class AbstractRecoverableArray<V extends EntryValue> implements Recover
     {
         _arrayFile.flush();
         _arrayFile.close();
+        _arrayFile=null;
     }
   }
 }
