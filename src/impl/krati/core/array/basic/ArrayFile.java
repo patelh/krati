@@ -92,6 +92,7 @@ public class ArrayFile
     
     this._file = file;
     this._writer = createWriter(_file, raf.length());
+    raf.close();
     this._writer.open();
     
     if(newFile)
