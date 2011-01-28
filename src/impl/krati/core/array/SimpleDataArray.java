@@ -1,12 +1,12 @@
 package krati.core.array;
 
 import java.io.IOException;
+import java.io.Closeable;
 import java.nio.channels.WritableByteChannel;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.log4j.Logger;
 
-import java.io.Closeable;
 import krati.Persistable;
 import krati.array.DataArray;
 import krati.array.LongArray;
@@ -806,8 +806,11 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
     }
 
     @Override
-    public final void close() throws IOException
+    public synchronized void close() throws IOException
     {
+        //It is assumed the store has been persisted and the compactor has finished any compactions before close is called
+        //The compact thread runs ever 100ms so perform persist and wait at least 2x the thread sleep time before calling close
+        _compactor.shutdown();
         _segmentManager.close();
     }
 }

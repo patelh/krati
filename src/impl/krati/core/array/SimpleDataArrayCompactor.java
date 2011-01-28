@@ -87,6 +87,11 @@ class SimpleDataArrayCompactor implements Runnable
      * A byte buffer from transferring bytes to a target segment. 
      */
     private ByteBuffer _buffer = null;
+
+    /**
+     * Used to control compact thread shutdown
+     */
+    private boolean _shutdown = false;
     
     /**
      * Constructs a DataArrayCompactor with the setting below:
@@ -329,7 +334,7 @@ class SimpleDataArrayCompactor implements Runnable
     @Override
     public void run()
     {
-        while(true)
+        while(!_shutdown)
         {
             if(_newCycle.compareAndSet(true, false))
             {
@@ -740,5 +745,10 @@ class SimpleDataArrayCompactor implements Runnable
             t.setDaemon(true);
             return t;
         }
+    }
+
+    public final void shutdown()
+    {
+        _shutdown = true;
     }
 }

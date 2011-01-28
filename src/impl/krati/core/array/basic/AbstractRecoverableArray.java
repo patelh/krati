@@ -174,6 +174,10 @@ abstract class AbstractRecoverableArray<V extends EntryValue> implements Recover
   @Override
   public final void close() throws IOException
   {
-    _arrayFile.close();
+    if(_arrayFile!=null)
+    {
+        _arrayFile.flush();
+        _arrayFile.close();
+    }
   }
 }

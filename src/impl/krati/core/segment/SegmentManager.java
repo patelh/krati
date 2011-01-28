@@ -1,7 +1,7 @@
 package krati.core.segment;
 
-import java.io.Closeable;
 import java.io.File;
+import java.io.Closeable;
 import java.io.FileFilter;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -358,9 +358,22 @@ public final class SegmentManager implements Closeable
     @Override
     public final void close() throws IOException
     {
-      for(Segment s: _segList)
+      _segMeta.close();
+      for(Segment s: _recycleList)
       {
           s.close();
       }
+      for(Segment s: _segList)
+      {
+          try
+          {
+              s.close();
+          }
+          catch(Exception ioe)
+          {
+              _log.warn("Exception closing segment : " + ioe.getMessage());
+          }
+      }
+      clear();
     }
 }
