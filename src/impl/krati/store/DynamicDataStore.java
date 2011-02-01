@@ -737,22 +737,22 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
         Exception ex=null;
         try
         {
-            if(this._dataArray!=null)
-                _dataArray.close();
-        }
-        catch(Exception e)
-        {
-            _log.error("Failed to close dataArray!" + e.getMessage());
-            ex=e;
-        }
-        try
-        {
             if(this._addrArray!=null)
                 _addrArray.close();
         }
         catch(Exception e)
         {
             _log.error("Failed to close addrArray!" + e.getMessage());
+            ex=e;
+        }
+        try
+        {
+            if(this._dataArray!=null)
+                _dataArray.close();
+        }
+        catch(Exception e)
+        {
+            _log.error("Failed to close dataArray!" + e.getMessage());
             ex=e;
         }
         if(ex!=null)

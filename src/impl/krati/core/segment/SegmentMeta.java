@@ -279,10 +279,9 @@ public class SegmentMeta implements Closeable
     {
         if(_raf!=null)
         {
-            _channel.close();
-            _channel = null;
             _raf.close();
             _raf = null;
         }
+        unlock();
     }
 }

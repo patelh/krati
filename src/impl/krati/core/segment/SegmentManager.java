@@ -358,16 +358,19 @@ public final class SegmentManager implements Closeable
     @Override
     public final void close() throws IOException
     {
-      _segMeta.close();
+      if(_segMeta!=null)
+          _segMeta.close();
       for(Segment s: _recycleList)
       {
-          s.close();
+          if(s!=null)
+              s.close();
       }
       for(Segment s: _segList)
       {
           try
           {
-              s.close();
+              if(s!=null)
+                  s.close();
           }
           catch(Exception ioe)
           {
