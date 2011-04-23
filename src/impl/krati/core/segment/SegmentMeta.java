@@ -277,11 +277,32 @@ public class SegmentMeta implements Closeable
     @Override
     public final void close() throws IOException
     {
-        if(_raf!=null)
+        IOException ioe = null;
+        RandomAccessFile raf = _raf;
+        _raf = null;
+        try
         {
-            _raf.close();
-            _raf = null;
+            unlock();
         }
-        unlock();
+        catch (IOException e)
+        {
+            _log.error("IOException unlocking on close : " + e.getMessage());
+            ioe=e; 
+        }
+
+        if(raf!=null)
+        {
+            try
+            {
+                raf.close();
+                raf = null;
+            }
+            catch (IOException e)
+            {
+                _log.error("IOException closing raf : " + e.getMessage());
+                ioe=e;
+            }
+        }
+        return ioe;
     }
 }
