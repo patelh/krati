@@ -261,6 +261,9 @@ public class SegmentMeta implements Closeable
             ioe=e; 
         }
 
+        //for gc
+        _mmapBuffer = null;
+
         if(raf!=null)
         {
             try
