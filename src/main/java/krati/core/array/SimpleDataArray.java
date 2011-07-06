@@ -8,6 +8,7 @@ import org.apache.log4j.Logger;
 
 import krati.Mode;
 import krati.Persistable;
+import krati.array.Array;
 import krati.array.DataArray;
 import krati.array.LongArray;
 import krati.core.array.SimpleDataArrayCompactor.CompactionUpdateBatch;
@@ -39,6 +40,7 @@ import krati.io.Closeable;
  * 05/22, 2011 - fixed method close()
  * 05/23, 2011 - sync compaction batches in method close()
  * 05/26, 2011 - added methods for partially reading data bytes
+ * 06/22, 2011 - catch SegmentException in method set() for safety
  */
 public class SimpleDataArray implements DataArray, Persistable, Closeable {
     private final static Logger _log = Logger.getLogger(SimpleDataArray.class);
@@ -658,7 +660,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable {
                 }
                 
                 return;
-            } catch(SegmentOverflowException soe) {
+            } catch(SegmentException se) {
                 _log.info("Segment " + _segment.getSegmentId() + " filled: " + _segment.getStatus());
                 
                 Segment nextSegment = _compactor.peekTargetSegment();
@@ -888,5 +890,10 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable {
                 _segmentManager.updateMeta();
             }
         }
+    }
+
+    @Override
+    public final Array.Type getType() {
+        return _addressArray.getType();
     }
 }

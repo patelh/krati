@@ -5,7 +5,9 @@ import java.io.IOException;
 import java.nio.channels.WritableByteChannel;
 
 import krati.Persistable;
+import krati.array.Array;
 import krati.array.DataArray;
+import krati.core.StoreConfig;
 import krati.core.array.AddressArray;
 import krati.core.array.SimpleDataArray;
 import krati.core.segment.SegmentFactory;
@@ -16,19 +18,50 @@ import krati.core.segment.SegmentManager;
  * 
  * @author jwu
  * 09/24, 2010
+ * 
+ * <p>
+ * 06/25, 2011 - Added support for StoreConfig
  */
 public abstract class AbstractDataArray implements DataArray, Persistable {
     protected final SimpleDataArray _dataArray;
     protected final AddressArray _addrArray;
+    protected final StoreConfig _config;
     protected final String _homePath;
     protected final File _homeDir;
+    
+    protected AbstractDataArray(StoreConfig config) throws Exception {
+        config.validate();
+        config.save();
+        
+        this._config = config;
+        this._homeDir = _config.getHomeDir();
+        this._homePath = _homeDir.getCanonicalPath();
+        
+        // Create address array 
+        _addrArray = createAddressArray(
+                _config.getHomeDir(),
+                _config.getInitialCapacity(),
+                _config.getBatchSize(),
+                _config.getNumSyncBatches(),
+                _config.isIndexesCached());
+        
+        // Create segment manager
+        String segmentHome = _homePath + File.separator + "segs";
+        SegmentManager segmentManager = SegmentManager.getInstance(
+                segmentHome,
+                _config.getSegmentFactory(),
+                _config.getSegmentFileSizeMB());
+        
+        // Create data array
+        _dataArray = new SimpleDataArray(_addrArray, segmentManager, _config.getSegmentCompactFactor());
+    }
     
     /**
      * Constructs a data array.
      * 
      * @param length               - the array length
      * @param batchSize            - the number of updates per update batch
-     * @param numSyncBatches       - the number of update batches required for updating the underlying address array
+     * @param numSyncBatches       - the number of update batches required for updating <code>indexes.dat</code>
      * @param homeDirectory        - the home directory of data array
      * @param segmentFactory       - the segment factory
      * @param segmentFileSizeMB    - the segment size in MB
@@ -45,23 +78,40 @@ public abstract class AbstractDataArray implements DataArray, Persistable {
         this._homeDir = homeDirectory;
         this._homePath = homeDirectory.getCanonicalPath();
         
+        // Create/validate/store config
+        _config = new StoreConfig(_homeDir, length);
+        _config.setBatchSize(batchSize);
+        _config.setNumSyncBatches(numSyncBatches);
+        _config.setSegmentFactory(segmentFactory);
+        _config.setSegmentFileSizeMB(segmentFileSizeMB);
+        _config.setSegmentCompactFactor(segmentCompactFactor);
+        _config.validate();
+        _config.save();
+        
         // Create address array 
-        _addrArray = createAddressArray(length, batchSize, numSyncBatches, homeDirectory);
+        _addrArray = createAddressArray(
+                _config.getHomeDir(),
+                _config.getInitialCapacity(),
+                _config.getBatchSize(),
+                _config.getNumSyncBatches(),
+                _config.isIndexesCached());
         
         // Create segment manager
-        String segmentHome = this._homePath + File.separator + "segs";
-        SegmentManager segmentManager = SegmentManager.getInstance(segmentHome,
-                                                               segmentFactory,
-                                                               segmentFileSizeMB);
+        String segmentHome = _homePath + File.separator + "segs";
+        SegmentManager segmentManager = SegmentManager.getInstance(
+                segmentHome,
+                _config.getSegmentFactory(),
+                _config.getSegmentFileSizeMB());
         
         // Create data array
-        this._dataArray = new SimpleDataArray(_addrArray, segmentManager, segmentCompactFactor);
+        _dataArray = new SimpleDataArray(_addrArray, segmentManager, _config.getSegmentCompactFactor());
     }
     
-    protected abstract AddressArray createAddressArray(int length,
+    protected abstract AddressArray createAddressArray(File homeDir,
+                                                       int length,
                                                        int batchSize,
                                                        int numSyncBatches,
-                                                       File homeDirectory) throws Exception;
+                                                       boolean indexesCached) throws Exception;
     
     public File getHomeDir() {
         return _homeDir;
@@ -174,5 +224,10 @@ public abstract class AbstractDataArray implements DataArray, Persistable {
     @Override
     public synchronized void sync() throws IOException {
         _dataArray.sync();
+    }
+    
+    @Override
+    public final Array.Type getType() {
+        return _addrArray.getType();
     }
 }

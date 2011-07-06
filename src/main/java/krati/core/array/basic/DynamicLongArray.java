@@ -6,6 +6,7 @@ import java.io.IOException;
 import org.apache.log4j.Logger;
 
 import krati.Mode;
+import krati.array.Array;
 import krati.array.DynamicArray;
 import krati.core.array.AddressArray;
 import krati.core.array.entry.EntryLongFactory;
@@ -44,7 +45,7 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
     }
     
     @Override
-    protected void loadArrayFileData() {
+    protected void loadArrayFileData() throws IOException {
         long maxScn = _arrayFile.getLwmScn();
         
         try {
@@ -54,8 +55,7 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
             expandCapacity(_internalArray.length() - 1);
             _internalArray.setArrayExpandListener(this);
         } catch(Exception e) {
-            maxScn = 0;
-            clear();
+            throw (e instanceof IOException) ? (IOException)e : new IOException("Failed to load array file", e);
         }
         
         _entryManager.setWaterMarks(maxScn, maxScn);
@@ -72,8 +72,15 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
             try {
                 set(0, get(0), endOfPeriod);
             } catch(Exception e) {
-                _log.error(e);
+                _log.error("Failed to saveHWMark " + endOfPeriod, e);
             }
+        } else if(0 < endOfPeriod && endOfPeriod < getLWMark()) {
+            try {
+                _entryManager.sync();
+            } catch(Exception e) {
+                _log.error("Failed to saveHWMark" + endOfPeriod, e);
+            }
+            _entryManager.setWaterMarks(endOfPeriod, endOfPeriod);
         }
     }
     
@@ -86,7 +93,7 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
         // Clear the entry manager
         _entryManager.clear();
         
-        // Clear the underly array file
+        // Clear the underlying array file
         try {
             _arrayFile.reset(_internalArray, _entryManager.getLWMark());
         } catch(IOException e) {
@@ -207,5 +214,10 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
     @Override
     public boolean isOpen() {
         return _mode == Mode.OPEN;
+    }
+    
+    @Override
+    public final Array.Type getType() {
+        return Array.Type.DYNAMIC;
     }
 }

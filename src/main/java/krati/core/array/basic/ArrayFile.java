@@ -12,6 +12,7 @@ import org.apache.log4j.Logger;
 import krati.core.array.entry.Entry;
 import krati.core.array.entry.EntryUtility;
 import krati.core.array.entry.EntryValue;
+import krati.io.BasicIO;
 import krati.io.DataReader;
 import krati.io.IOFactory;
 import krati.io.IOType;
@@ -24,7 +25,7 @@ import krati.util.Chronos;
  * <pre>
  * Version 0:
  * +--------------------------+
- * |Header                    |
+ * |Array header              |
  * |--------------------------|
  * |Storage Version    | long | 
  * |LWM Scn            | long |
@@ -32,7 +33,7 @@ import krati.util.Chronos;
  * |Array Length       | int  |
  * |Data Element Size  | int  |
  * |--------------------------|
- * | Array data begins at 1024|
+ * |Array body starts at 1024 |
  * |                          |
  * +--------------------------+
  * </pre>
@@ -41,7 +42,7 @@ import krati.util.Chronos;
  * 
  * <p>
  * 05/09, 2011 - added support for java.io.Closeable
- * 
+ * 06/24, 2011 - added setWaterMarks(lwmScn, hwmScn)
  */
 public class ArrayFile implements Closeable {
   public static final long STORAGE_VERSION  = 0;
@@ -90,7 +91,7 @@ public class ArrayFile implements Closeable {
    */
   public ArrayFile(File file, int initialLength, int elementSize, IOType type) throws IOException {
     boolean newFile = false;
-    long initialFileLength = DATA_START_POSITION + (initialLength * elementSize);
+    long initialFileLength = DATA_START_POSITION + ((long)initialLength * elementSize);
     
     if (!file.exists()) {
       if (!file.createNewFile()) {
@@ -224,8 +225,16 @@ public class ArrayFile implements Closeable {
     return _elementSize;
   }
   
+  public final BasicIO getBasicIO() {
+    return (BasicIO)_writer;
+  }
+  
   public void flush() throws IOException {
     _writer.flush();
+  }
+  
+  public void force() throws IOException {
+    _writer.force();
   }
   
   @Override
@@ -521,6 +530,17 @@ public class ArrayFile implements Closeable {
     _elementSize = value;
   }
   
+  public void setWaterMarks(long lwmScn, long hwmScn) throws IOException {
+      if(lwmScn <= hwmScn) {
+          writeHwmScn(hwmScn);
+          _writer.flush();
+          writeLwmScn(lwmScn);
+          _writer.flush();
+      } else {
+          throw new IOException("Invalid water marks: lwmScn=" + lwmScn + " hwmScn=" + hwmScn);
+      }
+  }
+  
   public synchronized void reset(MemoryIntArray intArray) throws IOException {
       _writer.flush();
       _writer.position(DATA_START_POSITION);
@@ -622,6 +642,28 @@ public class ArrayFile implements Closeable {
   
   public synchronized void reset(short[] shortArray, long maxScn) throws IOException {
       reset(shortArray);
+      
+      _log.info("update hwmScn and lwmScn:" + maxScn);
+      writeHwmScn(maxScn);
+      writeLwmScn(maxScn);
+      flush();
+  }
+  
+  public synchronized void resetAll(long value) throws IOException {
+      if(_elementSize != 8) {
+          throw new IOException("Operation aborted: elementSize=" + _elementSize);
+      }
+      
+      _writer.flush();
+      _writer.position(DATA_START_POSITION);
+      for(int i = 0; i < this._arrayLength; i++) {
+          _writer.writeLong(value);
+      }
+      _writer.flush();
+  }
+  
+  public synchronized void resetAll(long value, long maxScn) throws IOException {
+      resetAll(value);
       
       _log.info("update hwmScn and lwmScn:" + maxScn);
       writeHwmScn(maxScn);

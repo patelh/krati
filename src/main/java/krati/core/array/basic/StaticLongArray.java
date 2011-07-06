@@ -6,6 +6,7 @@ import java.io.IOException;
 import org.apache.log4j.Logger;
 
 import krati.Mode;
+import krati.array.Array;
 import krati.array.LongArray;
 import krati.core.array.AddressArray;
 import krati.core.array.entry.EntryLongFactory;
@@ -64,30 +65,15 @@ public class StaticLongArray extends AbstractRecoverableArray<EntryValueLong> im
     }
     
     @Override
-    protected void loadArrayFileData() {
-        long maxScn = 0;
-        
-        try {
-            maxScn = _arrayFile.getLwmScn();
-            _internalArray = _arrayFile.loadLongArray();
-            if (_internalArray.length != _length) {
-                maxScn = 0;
-                _internalArray = new long[_length];
-                clear();
-                
-                _log.warn("Allocated _internalArray due to invalid length");
-            } else {
-                _log.info("Data loaded successfully from file " + _arrayFile.getName());
-            }
-        } catch (Exception e) {
-            maxScn = 0;
-            _internalArray = new long[_length];
-            clear();
-            
-            _log.warn("Allocated _internalArray due to a thrown exception: " + e.getMessage());
+    protected void loadArrayFileData() throws IOException {
+        long maxScn = _arrayFile.getLwmScn();
+        if(_arrayFile.getArrayLength() != _length) {
+            throw new IOException("Invalid array length: " + _length);
         }
         
+        _internalArray = _arrayFile.loadLongArray();
         _entryManager.setWaterMarks(maxScn, maxScn);
+        _log.info("Data loaded successfully from file " + _arrayFile.getName());
     }
     
     /**
@@ -101,8 +87,15 @@ public class StaticLongArray extends AbstractRecoverableArray<EntryValueLong> im
             try {
                 set(0, get(0), endOfPeriod);
             } catch (Exception e) {
-                _log.error(e);
+                _log.error("Failed to saveHWMark " + endOfPeriod, e);
             }
+        } else if(0 < endOfPeriod && endOfPeriod < getLWMark()) {
+            try {
+                _entryManager.sync();
+            } catch(Exception e) {
+                _log.error("Failed to saveHWMark" + endOfPeriod, e);
+            }
+            _entryManager.setWaterMarks(endOfPeriod, endOfPeriod);
         }
     }
     
@@ -118,7 +111,7 @@ public class StaticLongArray extends AbstractRecoverableArray<EntryValueLong> im
         // Clear the entry manager
         _entryManager.clear();
         
-        // Clear the underly array file
+        // Clear the underlying array file
         try {
             _arrayFile.reset(_internalArray, _entryManager.getLWMark());
         } catch (IOException e) {
@@ -141,6 +134,11 @@ public class StaticLongArray extends AbstractRecoverableArray<EntryValueLong> im
     public void setCompactionAddress(int index, long address, long scn) throws Exception {
         _internalArray[index] = address;
         _entryManager.addToPreFillEntryLongCompaction(index, address, scn);
+    }
+    
+    @Override
+    public void expandCapacity(int index) throws Exception {
+        // Do nothing
     }
     
     @Override
@@ -212,5 +210,10 @@ public class StaticLongArray extends AbstractRecoverableArray<EntryValueLong> im
     @Override
     public boolean isOpen() {
         return _mode == Mode.OPEN;
+    }
+    
+    @Override
+    public final Array.Type getType() {
+        return Array.Type.STATIC;
     }
 }

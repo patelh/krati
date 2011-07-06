@@ -8,8 +8,12 @@ import org.apache.log4j.Logger;
 
 import krati.Mode;
 import krati.array.DataArray;
+import krati.core.StoreConfig;
+import krati.core.StoreParams;
+import krati.core.array.AddressArray;
+import krati.core.array.AddressArrayFactory;
 import krati.core.array.SimpleDataArray;
-import krati.core.array.basic.DynamicLongArray;
+import krati.core.array.basic.DynamicConstants;
 import krati.core.segment.SegmentFactory;
 import krati.core.segment.SegmentManager;
 import krati.store.DataSet;
@@ -32,16 +36,18 @@ import krati.util.LinearHashing;
  * <p>
  * 06/06, 2011 - Added support for Closeable
  * 06/08, 2011 - Scale to the Integer.MAX_VALUE capacity
+ * 06/25, 2011 - Added constructor using StoreConfig
  */
 public class DynamicDataSet implements DataSet<byte[]> {
     private final static Logger _log = Logger.getLogger(DynamicDataSet.class);
     
-    private final double _loadThreshold;
     private final File _homeDir;
+    private final StoreConfig _config;
+    private final AddressArray _addrArray;
     private final SimpleDataArray _dataArray;
-    private final DynamicLongArray _addrArray;
     private final DataSetHandler _dataHandler;
     private final HashFunction<byte[]> _hashFunction;
+    private final double _loadThreshold;
     private final int _unitCapacity;
     private final int _maxLevel;
     private volatile int _split;
@@ -51,6 +57,59 @@ public class DynamicDataSet implements DataSet<byte[]> {
     private volatile int _loadCountThreshold;
     
     /**
+     * Creates a dynamic DataSet with growing capacity as needed.
+     * 
+     * @param config - Store configuration
+     * @throws Exception if the set can not be created.
+     */
+    public DynamicDataSet(StoreConfig config) throws Exception {
+        config.validate();
+        config.save();
+        
+        this._config = config;
+        this._homeDir = config.getHomeDir();
+        
+        // Create data set handler
+        _dataHandler = new DefaultDataSetHandler();
+        
+        // Create dynamic address array
+        _addrArray = createAddressArray(
+                _config.getHomeDir(),
+                _config.getBatchSize(),
+                _config.getNumSyncBatches(),
+                _config.getIndexesCached());
+        _unitCapacity = DynamicConstants.SUB_ARRAY_SIZE;
+        
+        // Compute maxLevel
+        LinearHashing h = new LinearHashing(_unitCapacity);
+        h.reinit(Integer.MAX_VALUE);
+        _maxLevel = h.getLevel();
+        
+        int initLevel = StoreParams.getDynamicStoreInitialLevel(_config.getInitialCapacity());
+        if(initLevel > _maxLevel) {
+            _log.warn("initLevel reset from " + initLevel + " to " + _maxLevel);
+            initLevel = _maxLevel;
+        }
+        _addrArray.expandCapacity((_unitCapacity << initLevel) - 1);
+        
+        // Create underlying segment manager
+        String segmentHome = _homeDir.getCanonicalPath() + File.separator + "segs";
+        SegmentManager segmentManager = SegmentManager.getInstance(
+                segmentHome,
+                _config.getSegmentFactory(),
+                _config.getSegmentFileSizeMB());
+        
+        // Create underlying simple data array
+        this._dataArray = new SimpleDataArray(_addrArray, segmentManager, _config.getSegmentCompactFactor());
+        this._hashFunction = _config.getHashFunction();
+        this._loadThreshold = _config.getHashLoadFactor();
+        this._loadCount = scan();
+        this.initLinearHashing();
+        
+        _log.info(getStatus());
+    }
+    
+    /**
      * Creates a dynamic DataSet with the settings below:
      * 
      * <pre>
@@ -191,7 +250,7 @@ public class DynamicDataSet implements DataSet<byte[]> {
      * @param homeDir              the home directory of DataSet
      * @param initLevel            the level for initializing DataSet
      * @param batchSize            the number of updates per update batch
-     * @param numSyncBatches       the number of update batches required for updating the underlying address array
+     * @param numSyncBatches       the number of update batches required for updating <code>indexes.dat</code>
      * @param segmentFileSizeMB    the size of segment file in MB
      * @param segmentFactory       the segment factory
      * @throws Exception           if this dynamic data set cannot be created.
@@ -223,10 +282,10 @@ public class DynamicDataSet implements DataSet<byte[]> {
      * @param homeDir              the home directory of DataSet
      * @param initLevel            the level for initializing DataSet
      * @param batchSize            the number of updates per update batch
-     * @param numSyncBatches       the number of update batches required for updating the underlying address array
+     * @param numSyncBatches       the number of update batches required for updating <code>indexes.dat</code>
      * @param segmentFileSizeMB    the size of segment file in MB
      * @param segmentFactory       the segment factory
-     * @param hashLoadThreshold    the load factor of the underlying address array (hash table)
+     * @param hashLoadFactor       the load factor of the underlying address array (hash table)
      * @param hashFunction         the hash function for mapping values to indexes
      * @throws Exception           if this dynamic data set cannot be created.
      */
@@ -236,7 +295,7 @@ public class DynamicDataSet implements DataSet<byte[]> {
                           int numSyncBatches,
                           int segmentFileSizeMB,
                           SegmentFactory segmentFactory,
-                          double hashLoadThreshold,
+                          double hashLoadFactor,
                           HashFunction<byte[]> hashFunction) throws Exception {
         this(homeDir,
              initLevel,
@@ -245,7 +304,7 @@ public class DynamicDataSet implements DataSet<byte[]> {
              segmentFileSizeMB,
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
-             hashLoadThreshold,
+             hashLoadFactor,
              hashFunction);
     }
     
@@ -255,11 +314,11 @@ public class DynamicDataSet implements DataSet<byte[]> {
      * @param homeDir              the home directory of DataSet
      * @param initLevel            the initial level for creating DataSet
      * @param batchSize            the number of updates per update batch
-     * @param numSyncBatches       the number of update batches required for updating the underlying address array
+     * @param numSyncBatches       the number of update batches required for updating <code>indexes.dat</code>
      * @param segmentFileSizeMB    the size of segment file in MB
      * @param segmentFactory       the segment factory
      * @param segmentCompactFactor the load factor of segment, below which a segment is eligible for compaction
-     * @param hashLoadThreshold    the load factor of the underlying address array (hash table)
+     * @param hashLoadFactor       the load factor of the underlying address array (hash table)
      * @param hashFunction         the hash function for mapping values to indexes
      * @throws Exception           if this dynamic data set cannot be created.
      */
@@ -270,49 +329,76 @@ public class DynamicDataSet implements DataSet<byte[]> {
                           int segmentFileSizeMB,
                           SegmentFactory segmentFactory,
                           double segmentCompactFactor,
-                          double hashLoadThreshold,
+                          double hashLoadFactor,
                           HashFunction<byte[]> hashFunction) throws Exception {
-        this._homeDir = homeDir;
-        this._dataHandler = new DefaultDataSetHandler();
-        
-        // Create dynamic address array
-        _addrArray = createAddressArray(batchSize, numSyncBatches, homeDir);
-        _unitCapacity = _addrArray.subArrayLength();
-        
         // Compute maxLevel
-        LinearHashing h = new LinearHashing(_unitCapacity);
+        LinearHashing h = new LinearHashing(DynamicConstants.SUB_ARRAY_SIZE);
         h.reinit(Integer.MAX_VALUE);
         _maxLevel = h.getLevel();
         
+        // Compute initialCapacity
+        int initialCapacity = DynamicConstants.SUB_ARRAY_SIZE;
         if(initLevel >= 0) {
             if(initLevel > _maxLevel) {
                 _log.warn("initLevel reset from " + initLevel + " to " + _maxLevel);
                 initLevel = _maxLevel;
             }
-            
-            _addrArray.expandCapacity(_unitCapacity * (1 << initLevel) - 1);
+            initialCapacity = DynamicConstants.SUB_ARRAY_SIZE << initLevel;
         } else {
             _log.warn("initLevel ignored: " + initLevel);
         }
         
+        // Set homeDir
+        this._homeDir = homeDir;
+        
+        // Create/validate/store config
+        _config = new StoreConfig(_homeDir, initialCapacity);
+        _config.setBatchSize(batchSize);
+        _config.setNumSyncBatches(numSyncBatches);
+        _config.setSegmentFileSizeMB(segmentFileSizeMB);
+        _config.setSegmentCompactFactor(segmentCompactFactor);
+        _config.setSegmentFactory(segmentFactory);
+        _config.setHashLoadFactor(hashLoadFactor);
+        _config.setHashFunction(hashFunction);
+        _config.validate();
+        _config.save();
+        
+        // Create data set handler
+        _dataHandler = new DefaultDataSetHandler();
+        
+        // Create dynamic address array
+        _addrArray = createAddressArray(
+                _config.getHomeDir(),
+                _config.getBatchSize(),
+                _config.getNumSyncBatches(),
+                _config.getIndexesCached());
+        _addrArray.expandCapacity(initialCapacity - 1);
+        _unitCapacity = DynamicConstants.SUB_ARRAY_SIZE;
+        
         // Create underlying segment manager
         String segmentHome = homeDir.getCanonicalPath() + File.separator + "segs";
-        SegmentManager segmentManager = SegmentManager.getInstance(segmentHome, segmentFactory, segmentFileSizeMB);
+        SegmentManager segmentManager = SegmentManager.getInstance(
+                segmentHome,
+                _config.getSegmentFactory(),
+                _config.getSegmentFileSizeMB());
         
         // Create underlying simple data array
-        this._dataArray = new SimpleDataArray(_addrArray, segmentManager, segmentCompactFactor);
+        this._dataArray = new SimpleDataArray(_addrArray, segmentManager, _config.getSegmentCompactFactor());
         this._hashFunction = hashFunction;
-        this._loadThreshold = hashLoadThreshold;
+        this._loadThreshold = hashLoadFactor;
         this._loadCount = scan();
         this.initLinearHashing();
         
         _log.info(getStatus());
     }
     
-    protected DynamicLongArray createAddressArray(int batchSize,
-                                                  int numSyncBatches,
-                                                  File homeDirectory) throws Exception {
-        return new DynamicLongArray(batchSize, numSyncBatches, homeDirectory);
+    protected AddressArray createAddressArray(File homeDir,
+                                              int batchSize,
+                                              int numSyncBatches,
+                                              boolean indexesCached) throws Exception {
+        AddressArrayFactory factory = new AddressArrayFactory(indexesCached);
+        AddressArray addrArray = factory.createDynamicAddressArray(homeDir, batchSize, numSyncBatches);
+        return addrArray;
     }
     
     protected long hash(byte[] value) {
@@ -321,6 +407,11 @@ public class DynamicDataSet implements DataSet<byte[]> {
     
     protected long nextScn() {
         return System.currentTimeMillis();
+    }
+    
+    @Override
+    public final int capacity() {
+        return _dataArray.length();
     }
     
     @Override

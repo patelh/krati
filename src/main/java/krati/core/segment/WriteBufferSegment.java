@@ -27,8 +27,9 @@ public class WriteBufferSegment extends AbstractSegment {
         _bufferQueue = bufferQueue;
         if (mode == Mode.READ_WRITE) {
             _buffer = bufferQueue.poll();
-            if (_buffer != null)
+            if (_buffer != null) {
                 _log.info("ByteBuffer obtained");
+            }
         }
         this.init();
     }
@@ -293,6 +294,7 @@ public class WriteBufferSegment extends AbstractSegment {
 
     @Override
     public synchronized void force() throws IOException {
+        if (_channel == null) return;
         if (getMode() == Segment.Mode.READ_WRITE) {
             int offset = (int) _channel.position();
             int length = _buffer.position() - offset;
