@@ -1,6 +1,5 @@
 package krati.store;
 
-import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -35,8 +34,7 @@ import krati.util.HashFunction;
  * 06/04, 2011 - Added support for Closeable
  * 06/04, 2011 - Added getHomeDir
  */
-public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
-{
+public class DynamicDataStore implements DataStore<byte[], byte[]> {
     private final static Logger _log = Logger.getLogger(DynamicDataStore.class);
     
     private final File _homeDir;
@@ -676,34 +674,8 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
         if(_dataArray.isOpen()) {
             _dataArray.close();
         }
-    }
-
-    @Override
-    public final void close() throws IOException
-    {
-        _loadCount = 0;
-        Exception ex=null;
-        try
-        {
-            if(this._addrArray!=null)
-                _addrArray.close();
+        if(_addrArray.isOpen()) {
+            _addrArray.close();
         }
-        catch(Exception e)
-        {
-            _log.error("Failed to close addrArray!" + e.getMessage());
-            ex=e;
-        }
-        try
-        {
-            if(this._dataArray!=null)
-                _dataArray.close();
-        }
-        catch(Exception e)
-        {
-            _log.error("Failed to close dataArray!" + e.getMessage());
-            ex=e;
-        }
-        if(ex!=null)
-            throw new IOException("Failed to close store!", ex);
     }
 }

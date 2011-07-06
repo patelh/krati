@@ -8,6 +8,7 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 
 import org.apache.log4j.Logger;
+
 /**
  * SegmentMeta: Meta Data for Segments
  * 

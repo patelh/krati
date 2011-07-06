@@ -163,7 +163,7 @@ abstract class AbstractRecoverableArray<V extends EntryValue> implements Recover
     }
 
     @Override
-    public final void close() throws IOException
+    public void close() throws IOException
     {
         if(_arrayFile!=null)
         {
