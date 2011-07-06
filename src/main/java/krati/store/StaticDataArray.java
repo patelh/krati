@@ -1,6 +1,7 @@
 package krati.store;
 
 import java.io.File;
+import java.io.IOException;
 
 import org.apache.log4j.Logger;
 
@@ -13,7 +14,7 @@ import krati.core.segment.SegmentFactory;
  * StaticDataArray - a convenient class for creating a fixed-size data array.
  * 
  * @author jwu
- * Sep 24, 2010
+ * 09/24, 2010
  */
 public final class StaticDataArray extends AbstractDataArray implements ArrayStore {
     private final static Logger _log = Logger.getLogger(StaticDataArray.class);
@@ -77,7 +78,7 @@ public final class StaticDataArray extends AbstractDataArray implements ArraySto
      * Constructs a static data array.
      * 
      * @param length               - the array length
-     * @param batchSize            - the number of updates per update batch, i.e. the redo entry size
+     * @param batchSize            - the number of updates per update batch
      * @param numSyncBatches       - the number of update batches required for updating the underlying address array
      * @param homeDirectory        - the home directory of data array
      * @param segmentFactory       - the segment factory
@@ -129,7 +130,22 @@ public final class StaticDataArray extends AbstractDataArray implements ArraySto
     }
     
     @Override
-    public int capacity() {
+    public final int capacity() {
         return length();
+    }
+    
+    @Override
+    public final boolean isOpen() {
+        return _dataArray.isOpen();
+    }
+    
+    @Override
+    public synchronized void open() throws IOException {
+        _dataArray.open();
+    }
+    
+    @Override
+    public synchronized void close() throws IOException {
+        _dataArray.close();
     }
 }

@@ -14,11 +14,12 @@ import krati.util.HashFunction;
 
 /**
  * HashIndex is for serving index lookup from main memory and has the
- * best performance when {@link MemorySegmentFactory} is used to store
+ * best performance when {@link krati.core.segment.MemorySegmentFactory} is used to store
  * indexes in memory.
  * 
  * @author jwu
- *
+ * 
+ * 06/04, 2011 - Added support for Closeable
  */
 public class HashIndex implements Index {
     private final static Logger _logger = Logger.getLogger(HashIndex.class);
@@ -70,7 +71,7 @@ public class HashIndex implements Index {
                      int segmentFileSizeMB,
                      SegmentFactory segmentFactory,
                      HashFunction<byte[]> hashFunction) throws Exception {
-        _logger.info("init from " + homeDir.getPath());
+        _logger.info("init " + homeDir.getPath());
         _store = new DynamicDataStore(
                 homeDir,
                 initLevel,
@@ -78,8 +79,8 @@ public class HashIndex implements Index {
                 numSyncBatches,
                 segmentFileSizeMB,
                 segmentFactory,
-                0.5,   /* segmentCompactFactor  */
-                0.75,  /* store hash loadFactor */
+                0.5,   /* segmentCompactFactor */
+                0.75,  /* store hashHoadFactor */
                 hashFunction);
         _logger.info("init done");
     }
@@ -117,5 +118,20 @@ public class HashIndex implements Index {
     @Override
     public Iterator<Entry<byte[], byte[]>> iterator() {
         return _store.iterator();
+    }
+    
+    @Override
+    public boolean isOpen() {
+        return _store.isOpen();
+    }
+    
+    @Override
+    public void open() throws IOException {
+        _store.open();
+    }
+    
+    @Override
+    public void close() throws IOException {
+        _store.close();
     }
 }

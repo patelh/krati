@@ -1,5 +1,6 @@
 package krati.core.array.basic;
 
+import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -38,8 +39,10 @@ import krati.util.Chronos;
  * 
  * @author jwu
  * 
+ * 05/09, 2011 - added support for java.io.Closeable
+ * 
  */
-public class ArrayFile {
+public class ArrayFile implements Closeable {
   public static final long STORAGE_VERSION  = 0;
   public static final int ARRAY_HEADER_LENGTH = 1024;
   
@@ -101,7 +104,7 @@ public class ArrayFile {
       throw new IOException("Failed to open " + file.getAbsolutePath());
     }
     raf.close();
-
+    
     this._file = file;
     this._type = type;
     this._writer = IOFactory.createDataWriter(_file, _type);;
@@ -224,8 +227,10 @@ public class ArrayFile {
     _writer.flush();
   }
   
+  @Override
   public void close() throws IOException {
     _writer.close();
+    _writer = null;
   }
   
   /**

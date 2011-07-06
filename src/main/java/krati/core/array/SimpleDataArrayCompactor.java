@@ -6,14 +6,15 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.log4j.Logger;
 
@@ -35,13 +36,34 @@ import krati.util.Chronos;
  * It batches compaction update records and sends them to the writer for post-processing. 
  * 
  * @author jwu
- *
+ * 
+ * 05/22, 2011 - Fixed start/shutdown
+ * 05/23, 2011 - Added method clear() to clean up compactor internal state
+ * 
  */
 class SimpleDataArrayCompactor implements Runnable {
     private final static Logger _log = Logger.getLogger(SimpleDataArrayCompactor.class);
-    private final ExecutorService _executor = Executors.newSingleThreadExecutor(new CompactorThreadFactory());
-    private final SimpleDataArray _dataArray;
+    private ExecutorService _executor = Executors.newSingleThreadExecutor(new CompactorThreadFactory());
+    private SimpleDataArray _dataArray;
+    
+    /**
+     * Whether this compactor is enabled.
+     */
+    private volatile boolean _enabled = true;
+    
+    /**
+     * Compactor shutdown timeout in milliseconds (default 5000).
+     */
+    private long _shutdownTimeout = 5000;
+    
+    /**
+     * The load factor of segment to determine the legibility of compaction.
+     */
     private volatile double _compactLoadFactor;
+    
+    /**
+     * The internal state of compactor during the current running cycle.  
+     */
     private volatile State _state = State.DONE;
     
     /**
@@ -66,10 +88,10 @@ class SimpleDataArrayCompactor implements Runnable {
     private final AtomicBoolean _newCycle = new AtomicBoolean(false);
     
     /**
-     * Blocking queue for the compactor to send the writer the target segment as nextSegment. 
+     * Queue for the compactor to send the writer the target segment as nextSegment. 
      */
-    private final ArrayBlockingQueue<Segment> _targetQueue =
-        new ArrayBlockingQueue<Segment>(1);
+    private final ConcurrentLinkedQueue<Segment> _targetQueue =
+        new ConcurrentLinkedQueue<Segment>();
     
     /**
      * Queue for segments compacted successfully by the compactor. 
@@ -87,11 +109,6 @@ class SimpleDataArrayCompactor implements Runnable {
      */
     private ByteBuffer _buffer = null;
 
-    /**
-     * Used to control compact thread shutdown
-     */
-    private boolean _shutdown = false;
-    
     /**
      * Constructs a DataArrayCompactor with the setting below:
      * 
@@ -202,11 +219,17 @@ class SimpleDataArrayCompactor implements Runnable {
             // Delay compaction if only one segment is eligible for compaction but it is not VERY fragmented.
             if (_segSourceList.size() == 1 && _segSourceList.get(0).getLoadFactor() > (_compactLoadFactor/2)) return false;
             
-            for(Segment seg : _segSourceList) {
-                _log.info("Segment " + seg.getSegmentId() + " load factor=" + ((long)(seg.getLoadFactor() * 10000) / 10000.0));
+            try {
+                for(Segment seg : _segSourceList) {
+                    _log.info("Segment " + seg.getSegmentId() + " load factor=" + ((long)(seg.getLoadFactor() * 10000) / 10000.0));
+                }
+            } catch(ConcurrentModificationException e) {
+                _segPermits.set(0);
+                _segSourceList.clear();
+                return false;
             }
             
-            _segPermits.set(_segSourceList.size() - 1);
+            _segPermits.set(Math.max(_segSourceList.size() - 1, 0));
             _log.info("inspect done");
             return true;
         }
@@ -229,8 +252,11 @@ class SimpleDataArrayCompactor implements Runnable {
             
             _targetQueue.add(_segTarget);
             _log.info("bytes transferred to   " + _segTarget.getSegmentId() + ": " + (_segTarget.getAppendPosition() - Segment.dataStartPosition));
-        } catch(Exception e) {
-            _log.warn(e.getMessage(), e);
+        } catch(ConcurrentModificationException e1) {
+            _segSourceList.clear();
+            return false;
+        } catch(Exception e2) {
+            _log.warn(e2.getMessage(), e2);
             return false;
         }
         
@@ -296,12 +322,9 @@ class SimpleDataArrayCompactor implements Runnable {
     }
     
     @Override
-    public void run()
-    {
-        while(!_shutdown)
-        {
-            if(_newCycle.compareAndSet(true, false))
-            {
+    public void run() {
+        while(_enabled) {
+            if(_newCycle.compareAndSet(true, false)) {
                 // One and only one compactor is at work.
                 _lock.lock();
                 
@@ -333,15 +356,62 @@ class SimpleDataArrayCompactor implements Runnable {
         }
     }
     
+    /**
+     * Note that this method is called only by SimpleDataArray.
+     */
     final void start() {
+        _enabled = true;
+        _executor = Executors.newSingleThreadExecutor(new CompactorThreadFactory());
         _executor.execute(this);
     }
     
-    public boolean isStarted() {
+    /**
+     * Note that this method is called only by SimpleDataArray.
+     */
+    final void shutdown() {
+        _enabled = false;
+        
+        if(_executor != null && !_executor.isShutdown()) {
+            try {
+                _executor.awaitTermination(_shutdownTimeout, TimeUnit.MILLISECONDS);
+                _log.info("compactor shutdown");
+            } catch (InterruptedException e) {
+                _log.warn("compactor shutdown interrupted");
+            }
+            
+            try {
+                _state = State.DONE;
+                _executor.shutdown();
+            } catch (Exception e) {
+                _log.warn("compactor shutdown forced");
+            } finally {
+                _executor = null;
+            }
+        }
+    }
+    
+    /**
+     * Note that this method is called only by SimpleDataArray.
+     */
+    final boolean isStarted() {
         return _state != State.DONE;
     }
     
-    protected void reset() {
+    /**
+     * Note that this method is called only by SimpleDataArray.
+     */
+    final void clear() {
+        reset();
+        
+        _targetQueue.clear();
+        _compactedQueue.clear();
+        while(!_updateManager.isServiceQueueEmpty()) {
+            CompactionUpdateBatch batch = _updateManager.pollBatch();
+            _updateManager.recycleBatch(batch);
+        }
+    }
+    
+    private final void reset() {
         _segTarget = null;
         _segPermits.set(0);
         _segSourceList.clear();
@@ -647,10 +717,5 @@ class SimpleDataArrayCompactor implements Runnable {
             t.setDaemon(true);
             return t;
         }
-    }
-
-    public final void shutdown()
-    {
-        _shutdown = true;
     }
 }

@@ -1,8 +1,9 @@
-package test.core;
+package test.core.api;
 
 import org.junit.Test;
 
 import test.AbstractTest;
+import test.core.MemberDataUpdate;
 
 import java.util.Random;
 
@@ -14,7 +15,7 @@ import krati.core.array.basic.DynamicShortArray;
  * TestDynamicArray
  * 
  * @author jwu
- *
+ * 
  */
 public class TestDynamicArray extends AbstractTest {
     static long scn = 0;

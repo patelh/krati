@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.apache.log4j.Logger;
 
+import krati.Mode;
 import krati.Persistable;
 import krati.array.DataArray;
 import krati.array.LongArray;
@@ -19,6 +20,7 @@ import krati.core.segment.Segment;
 import krati.core.segment.SegmentException;
 import krati.core.segment.SegmentManager;
 import krati.core.segment.SegmentOverflowException;
+import krati.io.Closeable;
 
 /**
  * SimpleDataArray: Simple Persistent DataArray.
@@ -32,20 +34,35 @@ import krati.core.segment.SegmentOverflowException;
  * It is expected that this class is used in the case of multiple readers and single writer.
  * 
  * @author jwu
- *
+ * 
+ * 05/09, 2011 - added support for Closeable
+ * 05/22, 2011 - fixed method close()
+ * 05/23, 2011 - sync compaction batches in method close()
+ * 05/26, 2011 - added methods for partially reading data bytes
  */
-public class SimpleDataArray implements DataArray, Persistable, Closeable
-{
+public class SimpleDataArray implements DataArray, Persistable, Closeable {
     private final static Logger _log = Logger.getLogger(SimpleDataArray.class);
     
-    protected volatile Segment _segment;
     protected final AddressArray _addressArray;
     protected final AddressFormat _addressFormat;
     protected final SegmentManager _segmentManager;
     protected final SimpleDataArrayCompactor _compactor;
     protected final double _segmentCompactFactor;
     
-    private long _metaUpdateOnAppendPosition = Segment.dataStartPosition;
+    /**
+     * Current working segment to append data to.
+     */
+    private volatile Segment _segment;
+    
+    /**
+     * The mode can only be <code>Mode.INIT</code>, <code>Mode.OPEN</code> and <code>Mode.CLOSED</code>.
+     */
+    private volatile Mode _mode = Mode.INIT;
+    
+    /**
+     * Append position triggering segment meta data update
+     */
+    private volatile long _metaUpdatePosition = Segment.dataStartPosition;
     
     /**
      * Constructs a DataArray with Segment Compact Factor default to 0.5. 
@@ -80,6 +97,8 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
         _compactor.start();
         
         this.init();
+        this._mode = Mode.OPEN;
+        _log.info("mode=" + _mode);
     }
     
     private void consumeCompaction(CompactionUpdateBatch updateBatch) throws Exception {
@@ -175,7 +194,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
     
     protected void init() {
         try {
-            _metaUpdateOnAppendPosition = Segment.dataStartPosition;
+            _metaUpdatePosition = Segment.dataStartPosition;
             _segment = _segmentManager.nextSegment();
             _compactor.startsCycle();
             
@@ -327,7 +346,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
             int size = _addressFormat.getDataSize(address);
             return (size == 0) ? seg.readInt(segPos) : size;
         } catch(Exception e) {
-            _log.warn(e.getMessage(), e);
+            _log.warn(e.getMessage());
             return -1;
         }
     }
@@ -367,7 +386,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
             
             return data;
         } catch(Exception e) {
-            _log.warn(e.getMessage(), e);
+            _log.warn(e.getMessage());
             return null;
         }
     }
@@ -423,7 +442,96 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
             
             return len;
         } catch(Exception e) {
-            _log.warn(e.getMessage(), e);
+            _log.warn(e.getMessage());
+            return -1;
+        }
+    }
+    
+    /**
+     * Reads data byte at an index into a byte array.
+     * 
+     * This method does a full read of data bytes only if the destination byte
+     * array has enough capacity to store all the bytes from the specified index.
+     * Otherwise, a partial read is done to fill in the destination byte array.
+     *   
+     * @param index  the array index
+     * @param dst    the byte array to fill in
+     * @return the total number of bytes read if data is available at the given index.
+     *         Otherwise, <code>-1</code>.
+     */
+    public int read(int index, byte[] dst) {
+        rangeCheck(index);
+        
+        try {
+            long address = getAddress(index);
+            int segPos = _addressFormat.getOffset(address);
+            int segInd = _addressFormat.getSegment(address);
+            
+            // no data found
+            if(segPos < Segment.dataStartPosition) return -1;
+            
+            // get data segment
+            Segment seg = _segmentManager.getSegment(segInd);
+            if(seg == null) return -1;
+            
+            // read data length
+            int size = _addressFormat.getDataSize(address);
+            int len = (size == 0) ? seg.readInt(segPos) : size;
+            
+            // read data into byte array
+            if (len > 0) {
+                len = Math.min(len, dst.length);
+                seg.read(segPos + 4, dst, 0, len);
+            }
+            
+            return len;
+        } catch(Exception e) {
+            _log.warn(e.getMessage());
+            return -1;
+        }
+    }
+    
+    /**
+     * Reads data bytes from an offset of data at an index to fill in a byte array.
+     *   
+     * @param index  the array index
+     * @param offset the offset of data bytes
+     * @param dst    the byte array to fill in
+     * @return the total number of bytes read if data is available at the given index.
+     *         Otherwise, <code>-1</code>.
+     */
+    public int read(int index, int offset, byte[] dst) {
+        rangeCheck(index);
+        
+        try {
+            long address = getAddress(index);
+            int segPos = _addressFormat.getOffset(address);
+            int segInd = _addressFormat.getSegment(address);
+            
+            // no data found
+            if(segPos < Segment.dataStartPosition) return -1;
+            
+            // get data segment
+            Segment seg = _segmentManager.getSegment(segInd);
+            if(seg == null) return -1;
+            
+            // read data length
+            int size = _addressFormat.getDataSize(address);
+            int len = (size == 0) ? seg.readInt(segPos) : size;
+            
+            // read data into byte array
+            if (len > 0) {
+                if (len > offset) {
+                    len = Math.min(len - offset, dst.length);
+                    seg.read(segPos + 4 + offset, dst, 0, len);
+                } else {
+                    return -1;
+                }
+            }
+            
+            return len;
+        } catch(Exception e) {
+            _log.warn(e.getMessage());
             return -1;
         }
     }
@@ -534,9 +642,9 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
                 setAddress(index, address, scn);
                 
                 // update segment meta on first write
-                if (pos >= _metaUpdateOnAppendPosition) {
+                if (pos >= _metaUpdatePosition) {
                     _segmentManager.updateMeta();
-                    _metaUpdateOnAppendPosition = _segment.getInitialSize();
+                    _metaUpdatePosition = _segment.getInitialSize();
                 }
                 
                 if(_compactor.isStarted()) {
@@ -560,7 +668,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
                     // get the next segment available for appending
                     _segment = nextSegment;
                     _compactor.pollTargetSegment();
-                    _metaUpdateOnAppendPosition = _segment.getInitialSize();
+                    _metaUpdatePosition = _segment.getInitialSize();
                     
                     _log.info("nextSegment from compactor");
                     _log.info("Segment " + _segment.getSegmentId() + " online: " + _segment.getStatus());
@@ -572,7 +680,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
                             persist();
                             
                             // get the next segment available for appending
-                            _metaUpdateOnAppendPosition = Segment.dataStartPosition;
+                            _metaUpdatePosition = Segment.dataStartPosition;
                             _segment = _segmentManager.nextSegment();
                             
                             _log.info("Segment " + _segment.getSegmentId() + " online: " + _segment.getStatus());
@@ -593,9 +701,9 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
                             _segment = _compactor.pollTargetSegment();
                             if(_segment == null) {
                                 _segment = _segmentManager.nextSegment();
-                                _metaUpdateOnAppendPosition = Segment.dataStartPosition;
+                                _metaUpdatePosition = Segment.dataStartPosition;
                             } else {
-                                _metaUpdateOnAppendPosition = _segment.getInitialSize();
+                                _metaUpdatePosition = _segment.getInitialSize();
                             }
                             
                             _log.info("Segment " + _segment.getSegmentId() + " online: " + _segment.getStatus());
@@ -606,7 +714,7 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
                         persist();
                         
                         // get the next segment available for appending
-                        _metaUpdateOnAppendPosition = Segment.dataStartPosition;
+                        _metaUpdatePosition = Segment.dataStartPosition;
                         _segment = _segmentManager.nextSegment();
                         _compactor.startsCycle();
                         
@@ -634,54 +742,137 @@ public class SimpleDataArray implements DataArray, Persistable, Closeable
     }
     
     @Override
+    public long getLWMark() {
+        return _addressArray.getLWMark();
+    }
+    
+    @Override
     public long getHWMark() {
         return _addressArray.getHWMark();
     }
     
     @Override
-    public long getLWMark() {
-        return _addressArray.getLWMark();
-    }
-
-    @Override
-    public void saveHWMark(long endOfPeriod) throws Exception {
-        _addressArray.saveHWMark(endOfPeriod);
+    public synchronized void saveHWMark(long endOfPeriod) throws Exception {
+        if(isOpen()) {
+            _addressArray.saveHWMark(endOfPeriod);
+        }
     }
     
     @Override
     public synchronized void sync() throws IOException {
-        syncCompactor();
-        
-        /* CALLS ORDERED:
-         * Need force _segment first and then persist _addressArray.
-         * During recovery, the _addressArray can always point to addresses
-         * which are valid though may not reflect the most recent address update.
-         */
-        _segment.force();
-        _addressArray.sync();
-        _segmentManager.updateMeta();
+        if(isOpen()) {
+            syncCompactor();
+            
+            /* CALLS ORDERED: Need force _segment first and then persist
+             * _addressArray. During recovery, the _addressArray can always
+             * point to addresses which are valid though may not reflect the
+             * most recent address update.
+             */
+            _segment.force();
+            _addressArray.sync();
+            _segmentManager.updateMeta();
+        }
     }
     
     @Override
     public synchronized void persist() throws IOException {
-        syncCompactor();
+        if(isOpen()) {
+            syncCompactor();
+            
+            /* CALLS ORDERED: Need force _segment first and then persist
+             * _addressArray. During recovery, the _addressArray can always
+             * point to addresses which are valid though may not reflect the
+             * most recent address update.
+             */
+            _segment.force();
+            _addressArray.persist();
+            _segmentManager.updateMeta();
+        }
+    }
+    
+    /**
+     * Clears all data stored in this SimpleDataArray.
+     * This method is not effective if this SimpleDataArray is not open. 
+     */
+    @Override
+    public synchronized void clear() {
+        if(isOpen()) {
+            _compactor.clear();
+            _addressArray.clear();
+            _segmentManager.clear();
+            this.init();
+        }
+    }
+    
+    /**
+     * Close to quit from serving requests.
+     * 
+     * @throws IOException if the underlying service cannot be closed properly.
+     */
+    @Override
+    public synchronized void close() throws IOException {
+        if (_mode == Mode.CLOSED) {
+            return;
+        }
         
-        /* CALLS ORDERED:
-         * Need force _segment first and then persist _addressArray.
-         * During recovery, the _addressArray can always point to addresses
-         * which are valid though may not reflect the most recent address update.
-         */
-        _segment.force();
-        _addressArray.persist();
-        _segmentManager.updateMeta();
+        _mode = Mode.CLOSED;
+        
+        try {
+            // THE CALLS ORDERED. 
+            _compactor.shutdown();   // shutdown compactor
+            sync();                  // consume compaction batches are generated during shutdown
+            _compactor.clear();      // cleanup compactor internal state
+            _addressArray.close();   // close address array
+            _segmentManager.close(); // close segment manager
+        } catch(Exception e) {
+            _log.error("Failed to close", e);
+            throw (e instanceof IOException) ? (IOException)e : new IOException(e);
+        } finally {
+            _log.info("mode=" + _mode);
+        }
+    }
+    
+    /**
+     * Open to start serving requests.
+     *  
+     * @throws IOException if the underlying service cannot be opened properly.
+     */
+    @Override
+    public synchronized void open() throws IOException {
+        if (_mode == Mode.OPEN) {
+            return;
+        }
+        
+        try {
+            _addressArray.open();
+            _segmentManager.open();
+            _compactor.start();
+            
+            init();
+            _mode = Mode.OPEN;
+        } catch(Exception e) {
+            _mode = Mode.CLOSED;
+            _log.error("Failed to open", e);
+            
+            _compactor.shutdown();
+            _compactor.clear();
+            
+            if (_addressArray.isOpen()) {
+                _addressArray.close();
+            }
+            if (_segmentManager.isOpen()) {
+                _segmentManager.close();
+            }
+            
+            throw (e instanceof IOException) ? (IOException)e : new IOException(e);
+        } finally {
+            _log.info("mode=" + _mode);
+        }
     }
     
     @Override
-    public synchronized void clear() {
-        _compactor.reset();
-        _addressArray.clear();
-        _segmentManager.clear();
-        this.init();
+    public boolean isOpen() {
+        return _mode == Mode.OPEN;
     }
     
     private class SegmentPersistListener extends EntryPersistAdapter {

@@ -15,6 +15,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.ArrayList;
 
+import krati.Mode;
+import krati.io.Closeable;
+
 import org.apache.log4j.Logger;
 
 /**
@@ -37,23 +40,36 @@ import org.apache.log4j.Logger;
  * </pre>
  * 
  * @author jwu
- *
+ * 02/05, 2010
+ * 05/24, 2010 - Always try to open the manager upon call to SegmentManager.getInstance(...)
+ *  
  */
-public final class SegmentManager implements Closeable
-{
+public final class SegmentManager implements Closeable {
     private final static Logger _log = Logger.getLogger(SegmentManager.class);
     private final static Map<String, SegmentManager> _segManagerMap = new HashMap<String, SegmentManager>();
-
+    
     private final List<Segment> _segList = new ArrayList<Segment>(100);
     private final LinkedList<Segment> _recycleList = new LinkedList<Segment>();
-    private final int _recycleLimit;
     private final SegmentFactory _segFactory;
-    private final SegmentMeta _segMeta;
     private final String _segHomePath;
     private final int _segFileSizeMB;
+    private final int _recycleLimit;
 
-    private Segment _segCurrent;
-
+    /**
+     * The meta data for all the managed segments.
+     */
+    private volatile SegmentMeta _segMeta = null;
+    
+    /**
+     * The current segment.
+     */
+    private volatile Segment _segCurrent = null;
+    
+    /**
+     * The mode can only be <code>Mode.INIT</code>, <code>Mode.OPEN</code> and <code>Mode.CLOSED</code>.
+     */
+    private volatile Mode _mode = Mode.INIT;
+    
     private SegmentManager(String segmentHomePath) throws IOException {
         this(segmentHomePath, new MappedSegmentFactory());
     }
@@ -68,9 +84,8 @@ public final class SegmentManager implements Closeable
         this._segFactory = segmentFactory;
         this._segHomePath = segmentHomePath;
         this._segFileSizeMB = segmentFileSizeMB;
-        this._segMeta = new SegmentMeta(new File(_segHomePath, ".meta"));
         this._recycleLimit = computeRecycleLimit(segmentFileSizeMB);
-        this.init();
+        this.open();
     }
 
     private int computeRecycleLimit(int segmentFileSizeMB) {
@@ -113,9 +128,7 @@ public final class SegmentManager implements Closeable
     }
 
     public synchronized void clear() {
-        _segList.clear();
-        _segCurrent = null;
-        _recycleList.clear();
+        clearInternal(true /* CLEAR META */);
     }
 
     /**
@@ -194,7 +207,11 @@ public final class SegmentManager implements Closeable
         return seg;
     }
 
-    protected synchronized void init() throws IOException {
+    private void initMeta() throws IOException {
+        _segMeta = new SegmentMeta(new File(_segHomePath, ".meta"));
+    }
+
+    private void initSegs() throws IOException {
         File[] segFiles = listSegmentFiles();
         if (segFiles.length == 0) {
             return;
@@ -220,14 +237,42 @@ public final class SegmentManager implements Closeable
             }
         } catch (IOException e) {
             _log.error(e.getMessage());
-
-            clear();
+            
+            clearInternal(false /* DO NOT CLEAR META */);
             throw e;
         }
 
         _log.info("init done");
     }
 
+    private void clearInternal(boolean clearMeta) {
+        // Close all known segments
+        for(int segId = 0, cnt = _segList.size(); segId < cnt; segId++) {
+            Segment seg = _segList.get(segId);
+            if(seg != null) {
+                try {
+                    seg.close(false);
+                } catch (IOException e) {
+                    _log.warn("failed to close segment " + seg.getSegmentId());
+                } finally {
+                    _segList.set(segId, null);
+                }
+            }
+        }
+        
+        if(clearMeta) {
+            try {
+                updateMeta();
+            } catch (IOException e) {
+                _log.warn("failed to clear segment meta");
+            }
+        }
+        
+        _segList.clear();
+        _segCurrent = null;
+        _recycleList.clear();
+    }
+    
     protected File[] listSegmentFiles() {
         File segDir = new File(_segHomePath);
         File[] segFiles = segDir.listFiles(new FileFilter() {
@@ -267,8 +312,7 @@ public final class SegmentManager implements Closeable
 
         try {
             channel = new RandomAccessFile(getMeta().getMetaFile(), "rw").getChannel();
-            lock = channel.lock(0, Long.MAX_VALUE, false); // get exclusive file
-                                                           // lock
+            lock = channel.lock(0, Long.MAX_VALUE, false); // get exclusive file lock
             _segMeta.wrap(this);
         } finally {
             if (lock != null)
@@ -305,31 +349,54 @@ public final class SegmentManager implements Closeable
             _segManagerMap.put(key, mgr);
         }
 
+        mgr.open();
         return mgr;
+    }
+
+    @Override
+    public synchronized void close() throws IOException {
+        if(_mode == Mode.CLOSED) {
+            return;
+        }
+        
+        try {
+            clearInternal(false /* DO NOT CLEAR META */);
+            if(_segMeta != null) {
+                _segMeta.close();
+            }
+        } catch(Exception e) {
+            _log.error("Failed to close", e);
+        } finally {
+            _segMeta = null;
+        }
+        
+        // The manager is closed properly now.
+        _mode = Mode.CLOSED;
     }
     
     @Override
-    public final void close() throws IOException
-    {
-      if(_segMeta!=null)
-          _segMeta.close();
-      for(Segment s: _recycleList)
-      {
-          if(s!=null)
-              s.close();
-      }
-      for(Segment s: _segList)
-      {
-          try
-          {
-              if(s!=null)
-                  s.close();
-          }
-          catch(Exception ioe)
-          {
-              _log.warn("Exception closing segment : " + ioe.getMessage());
-          }
-      }
-      clear();
+    public synchronized void open() throws IOException {
+        if(_mode == Mode.OPEN) return;
+        
+        // Initialize segment meta data.
+        initMeta();
+        
+        // Initialize all known segments.
+        try {
+            initSegs();
+        } catch(Exception e) {
+            this.close();
+            
+            // Throw original exception if possible 
+            throw (e instanceof IOException) ? (IOException)e : new IOException(e);
+        }
+        
+        // The manager is opened properly now.
+        _mode = Mode.OPEN;
+    }
+    
+    @Override
+    public boolean isOpen() {
+        return _mode == Mode.OPEN;
     }
 }

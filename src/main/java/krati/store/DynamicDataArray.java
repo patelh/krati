@@ -1,6 +1,7 @@
 package krati.store;
 
 import java.io.File;
+import java.io.IOException;
 
 import krati.array.DynamicArray;
 import krati.core.array.AddressArray;
@@ -78,7 +79,7 @@ public final class DynamicDataArray extends AbstractDataArray implements Dynamic
      * Constructs a dynamic data array.
      * 
      * @param initialLength        - the initial array length
-     * @param batchSize            - the number of updates per update batch, i.e. the redo entry size
+     * @param batchSize            - the number of updates per update batch
      * @param numSyncBatches       - the number of update batches required for updating the underlying address array
      * @param homeDirectory        - the home directory of data array
      * @param segmentFactory       - the segment factory
@@ -144,12 +145,27 @@ public final class DynamicDataArray extends AbstractDataArray implements Dynamic
     }
     
     @Override
-    public int getIndexStart() {
+    public final int getIndexStart() {
         return 0;
     }
     
     @Override
-    public int capacity() {
+    public final int capacity() {
         return length();
+    }
+    
+    @Override
+    public final boolean isOpen() {
+        return _dataArray.isOpen();
+    }
+    
+    @Override
+    public synchronized void open() throws IOException {
+        _dataArray.open();
+    }
+    
+    @Override
+    public synchronized void close() throws IOException {
+        _dataArray.close();
     }
 }

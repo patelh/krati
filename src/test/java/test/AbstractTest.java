@@ -2,8 +2,11 @@ package test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.List;
 
 import org.apache.log4j.Logger;
+
+import test.util.SeedData;
 
 import junit.framework.TestCase;
 
@@ -28,6 +31,9 @@ public class AbstractTest extends TestCase {
         if(!TEST_RESOURCES_DIR.exists()) {
             TEST_RESOURCES_DIR.mkdirs();
         }
+        
+        _log.info("krati.test.output.dir: " + TEST_OUTPUT_DIR.getAbsolutePath());
+        _log.info("krati.test.resources.dir: " + TEST_RESOURCES_DIR.getAbsolutePath());
     }
     
     // Default Test Params.
@@ -52,7 +58,7 @@ public class AbstractTest extends TestCase {
         try {
             _idCount = Integer.parseInt(System.getProperty("krati.test.idCount"));
         } catch(Exception e) {
-            _idCount = 500000;
+            _idCount = 100000;
         } finally {
             _log.info("krati.test.idCount: " + _idCount);
         }
@@ -68,7 +74,7 @@ public class AbstractTest extends TestCase {
         try {
             _runTimeSeconds = Integer.parseInt(System.getProperty("krati.test.runTimeSeconds"));
         } catch(Exception e) {
-            _runTimeSeconds = 120;
+            _runTimeSeconds = 60;
         } finally {
             _log.info("krati.test.runTimeSeconds: " + _runTimeSeconds);
         }
@@ -76,7 +82,7 @@ public class AbstractTest extends TestCase {
         try {
             _segFileSizeMB = Integer.parseInt(System.getProperty("krati.test.segFileSizeMB"));
         } catch(Exception e) {
-            _segFileSizeMB = 256;
+            _segFileSizeMB = 128;
         } finally {
             _log.info("krati.test.segFileSizeMB: " + _segFileSizeMB);
         }
@@ -205,5 +211,18 @@ public class AbstractTest extends TestCase {
     
     public static int gethitPercent() {
         return _hitPercent;
+    }
+    
+    public static List<String> _lineSeedData = null;
+    
+    static {
+        SeedData seedData = new SeedData();
+        try {
+            seedData.load();
+            _lineSeedData = seedData.getLines();
+        } catch (IOException e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
     }
 }

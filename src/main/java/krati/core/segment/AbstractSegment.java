@@ -82,7 +82,7 @@ public abstract class AbstractSegment implements Segment {
     }
     
     protected long getChannelPosition() throws IOException {
-        return _channel.position();
+        return _channel == null ? -1 : _channel.position();
     }
     
     @Override
@@ -109,7 +109,7 @@ public abstract class AbstractSegment implements Segment {
         b.append('=');
         try {
             b.append(getChannelPosition());
-        } catch (IOException ioe) {
+        } catch (Exception e) {
             b.append('?');
         }
         

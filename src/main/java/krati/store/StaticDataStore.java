@@ -28,11 +28,14 @@ import krati.util.HashFunction;
  * </pre>
  * 
  * @author jwu
- *
+ * 
+ * 06/04, 2011 - Added support for Closeable
+ * 06/04, 2011 - Added getHomeDir
  */
 public class StaticDataStore implements DataStore<byte[], byte[]> {
     private final static Logger _log = Logger.getLogger(StaticDataStore.class);
     
+    private final File _homeDir;
     private final SimpleDataArray _dataArray;
     private final DataStoreHandler _dataHandler;
     private final HashFunction<byte[]> _hashFunction;
@@ -41,16 +44,16 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
      * Creates a DataStore instance with the settings below:
      * 
      * <pre>
-     *    Entry Size             : 10000
-     *    Max Entries            : 5
-     *    Segment File Size      : 256MB
-     *    Segment Compact Factor : 0.5
-     *    Hash Function          : krati.util.FnvHashFunction
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentFileSizeMB    : 256
+     *    segmentCompactFactor : 0.5
+     *    hashFunction         : krati.util.FnvHashFunction
      * </pre>
      * 
-     * @param homeDir              the home directory
-     * @param capacity             the capacity of data store
-     * @param segmentFactory       the segment factory
+     * @param homeDir            the home directory
+     * @param capacity           the capacity of data store
+     * @param segmentFactory     the segment factory
      * @throws Exception
      */
     public StaticDataStore(File homeDir, int capacity, SegmentFactory segmentFactory) throws Exception {
@@ -68,16 +71,16 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
      * Creates a DataStore instance with the settings below:
      * 
      * <pre>
-     *    Entry Size             : 10000
-     *    Max Entries            : 5
-     *    Segment Compact Factor : 0.5
-     *    Hash Function          : krati.util.FnvHashFunction
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentCompactFactor : 0.5
+     *    hashFunction         : krati.util.FnvHashFunction
      * </pre>
      * 
-     * @param homeDir              the home directory
-     * @param capacity             the capacity of data store
-     * @param segmentFileSizeMB    the size of segment file in MB
-     * @param segmentFactory       the segment factory
+     * @param homeDir            the home directory
+     * @param capacity           the capacity of data store
+     * @param segmentFileSizeMB  the size of segment file in MB
+     * @param segmentFactory     the segment factory
      * @throws Exception
      */
     public StaticDataStore(File homeDir,
@@ -98,28 +101,28 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
      * Creates a DataStore instance with the settings below:
      * 
      * <pre>
-     *    Segment Compact Factor : 0.5
-     *    Hash Function          : krati.util.FnvHashFunction
+     *    segmentCompactFactor : 0.5
+     *    hashFunction         : krati.util.FnvHashFunction
      * </pre>
      * 
-     * @param homeDir              the home directory
-     * @param capacity             the capacity of data store
-     * @param entrySize            the redo entry size (i.e., batch size)
-     * @param maxEntries           the number of redo entries required for updating the underlying address array
-     * @param segmentFileSizeMB    the size of segment file in MB
-     * @param segmentFactory       the segment factory
+     * @param homeDir            the home directory
+     * @param capacity           the capacity of data store
+     * @param batchSize          the number of updates per update batch
+     * @param numSyncBatches     the number of update batches required for updating the underlying address array
+     * @param segmentFileSizeMB  the size of segment file in MB
+     * @param segmentFactory     the segment factory
      * @throws Exception
      */
     public StaticDataStore(File homeDir,
                            int capacity,
-                           int entrySize,
-                           int maxEntries,
+                           int batchSize,
+                           int numSyncBatches,
                            int segmentFileSizeMB,
                            SegmentFactory segmentFactory) throws Exception {
         this(homeDir,
              capacity,
-             entrySize,
-             maxEntries,
+             batchSize,
+             numSyncBatches,
              segmentFileSizeMB,
              segmentFactory,
              0.5, /* segment compact factor  */
@@ -130,29 +133,29 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
      * Creates a DataStore instance with the settings below:
      * 
      * <pre>
-     *    Segment Compact Factor : 0.5
+     *    segmentCompactFactor : 0.5
      * </pre>
      * 
-     * @param homeDir              the home directory
-     * @param capacity             the capacity of data store
-     * @param entrySize            the redo entry size (i.e., batch size)
-     * @param maxEntries           the number of redo entries required for updating the underlying address array
-     * @param segmentFileSizeMB    the size of segment file in MB
-     * @param segmentFactory       the segment factory
-     * @param hashFunction         the hash function for mapping keys to indexes
+     * @param homeDir            the home directory
+     * @param capacity           the capacity of data store
+     * @param batchSize          the number of updates per update batch
+     * @param numSyncBatches     the number of update batches required for updating the underlying address array
+     * @param segmentFileSizeMB  the size of segment file in MB
+     * @param segmentFactory     the segment factory
+     * @param hashFunction       the hash function for mapping keys to indexes
      * @throws Exception
      */
     public StaticDataStore(File homeDir,
                            int capacity,
-                           int entrySize,
-                           int maxEntries,
+                           int batchSize,
+                           int numSyncBatches,
                            int segmentFileSizeMB,
                            SegmentFactory segmentFactory,
                            HashFunction<byte[]> hashFunction) throws Exception {
         this(homeDir,
              capacity,
-             entrySize,
-             maxEntries,
+             batchSize,
+             numSyncBatches,
              segmentFileSizeMB,
              segmentFactory,
              0.5, /* segment compact factor  */
@@ -162,29 +165,31 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
     /**
      * Creates a DataStore instance.
      * 
-     * @param homeDir                the home directory
-     * @param capacity               the capacity of data store
-     * @param entrySize              the redo entry size (i.e., batch size)
-     * @param maxEntries             the number of redo entries required for updating the underlying address array
-     * @param segmentFileSizeMB      the size of segment file in MB
-     * @param segmentFactory         the segment factory
-     * @param segmentCompactFactor   the load factor of segment, below which a segment is eligible for compaction
-     * @param hashFunction           the hash function for mapping keys to indexes
+     * @param homeDir              the home directory
+     * @param capacity             the capacity of data store
+     * @param batchSize            the number of updates per update batch
+     * @param numSyncBatches       the number of update batches required for updating the underlying address array
+     * @param segmentFileSizeMB    the size of segment file in MB
+     * @param segmentFactory       the segment factory
+     * @param segmentCompactFactor the load factor of segment, below which a segment is eligible for compaction
+     * @param hashFunction         the hash function for mapping keys to indexes
      * @throws Exception
      */
     public StaticDataStore(File homeDir,
                            int capacity,
-                           int entrySize,
-                           int maxEntries,
+                           int batchSize,
+                           int numSyncBatches,
                            int segmentFileSizeMB,
                            SegmentFactory segmentFactory,
                            double segmentCompactFactor,
                            HashFunction<byte[]> hashFunction) throws Exception {
+        this._homeDir = homeDir;
+        
         // Create data store handler
         _dataHandler = new DefaultDataStoreHandler();
         
         // Create address array
-        AddressArray addressArray = createAddressArray(capacity, entrySize, maxEntries, homeDir);
+        AddressArray addressArray = createAddressArray(capacity, batchSize, numSyncBatches, homeDir);
         
         if (addressArray.length() != capacity) {
             throw new IOException("Capacity expected: " + addressArray.length() + " not " + capacity);
@@ -199,10 +204,10 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
     }
     
     protected AddressArray createAddressArray(int length,
-                                              int entrySize,
-                                              int maxEntries,
+                                              int batchSize,
+                                              int numSyncBatches,
                                               File homeDirectory) throws Exception {
-        return new StaticLongArray(length, entrySize, maxEntries, homeDirectory);
+        return new StaticLongArray(length, batchSize, numSyncBatches, homeDirectory);
     }
     
     protected long hash(byte[] key) {
@@ -211,16 +216,6 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
     
     protected long nextScn() {
         return System.currentTimeMillis();
-    }
-    
-    @Override
-    public void sync() throws IOException {
-        _dataArray.sync();
-    }
-    
-    @Override
-    public void persist() throws IOException {
-        _dataArray.persist();
     }
     
     @Override
@@ -286,24 +281,68 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
     }
     
     @Override
+    public synchronized void sync() throws IOException {
+        _dataArray.sync();
+    }
+    
+    @Override
+    public synchronized void persist() throws IOException {
+        _dataArray.persist();
+    }
+    
+    @Override
     public synchronized void clear() throws IOException {
         _dataArray.clear();
     }
     
     /**
+     * @return the home directory of this data store.
+     */
+    public final File getHomeDir() {
+        return _homeDir;
+    }
+    
+    /**
      * @return the underlying data array.
      */
-    public DataArray getDataArray() {
+    public final DataArray getDataArray() {
         return _dataArray;
     }
     
     @Override
     public Iterator<byte[]> keyIterator() {
-        return new DataStoreKeyIterator(_dataArray, _dataHandler);
+        if(isOpen()) {
+            return new DataStoreKeyIterator(_dataArray, _dataHandler);
+        }
+        
+        throw new StoreClosedException();
     }
     
     @Override
     public Iterator<Entry<byte[], byte[]>> iterator() {
-        return new DataStoreIterator(_dataArray, _dataHandler);
+        if(isOpen()) {
+            return new DataStoreIterator(_dataArray, _dataHandler);
+        }
+        
+        throw new StoreClosedException();
+    }
+    
+    @Override
+    public boolean isOpen() {
+        return _dataArray.isOpen();
+    }
+    
+    @Override
+    public synchronized void open() throws IOException {
+        if(!_dataArray.isOpen()) {
+            _dataArray.open();
+        }
+    }
+    
+    @Override
+    public synchronized void close() throws IOException {
+        if(_dataArray.isOpen()) {
+            _dataArray.close();
+        }
     }
 }

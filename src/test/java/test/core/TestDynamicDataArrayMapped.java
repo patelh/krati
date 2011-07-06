@@ -6,11 +6,17 @@ import krati.core.segment.SegmentFactory;
 import krati.store.AbstractDataArray;
 import krati.store.DynamicDataArray;
 
-public class TestDynamicDataArray extends EvalDataArray {
+/**
+ * TestDynamicDataArrayMapped
+ * 
+ * @author jwu
+ * 
+ */
+public class TestDynamicDataArrayMapped extends EvalDataArray {
 
     @Override
     protected SegmentFactory createSegmentFactory() {
-        return new krati.core.segment.MemorySegmentFactory();
+        return new krati.core.segment.MappedSegmentFactory();
     }
 
     @Override
@@ -26,9 +32,9 @@ public class TestDynamicDataArray extends EvalDataArray {
         
         dynArray.set(initialLength, null, System.currentTimeMillis());
         
-        dynArray.set(initialLength * 2, null, System.currentTimeMillis());
-        
-        dynArray.set(initialLength * 3, null, System.currentTimeMillis());
+        if(initialLength < (1 << 20)) {
+            dynArray.set(initialLength * 2, null, System.currentTimeMillis());
+        }
         
         return dynArray;
     }

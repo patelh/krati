@@ -10,6 +10,7 @@ import java.util.Map.Entry;
 
 import org.apache.log4j.Logger;
 
+import krati.Mode;
 import krati.array.DataArray;
 import krati.core.array.SimpleDataArray;
 import krati.core.array.basic.DynamicLongArray;
@@ -30,12 +31,15 @@ import krati.util.HashFunction;
  * </pre>
  * 
  * @author jwu
- *
+ * 
+ * 06/04, 2011 - Added support for Closeable
+ * 06/04, 2011 - Added getHomeDir
  */
 public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
 {
     private final static Logger _log = Logger.getLogger(DynamicDataStore.class);
     
+    private final File _homeDir;
     private final double _loadThreshold;
     private final SimpleDataArray _dataArray;
     private final DynamicLongArray _addrArray;
@@ -52,46 +56,16 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore with the settings below:
      * 
      * <pre>
-     *    Initial Level            : 0
-     *    Entry Size               : 10000
-     *    Max Entries              : 5
-     *    Segment File Size        : 256MB
-     *    Segment Compact Factor   : 0.5
-     *    Store Hash Load Factor   : 0.75
-     *    Store Hash Function      : krati.util.FnvHashFunction
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentFileSizeMB    : 256
+     *    segmentCompactFactor : 0.5
+     *    Store hashLoadFactor : 0.75
+     *    Store hashFunction   : krati.util.FnvHashFunction
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param segmentFileSizeMB      the size of segment file in MB
-     * @param segmentFactory         the segment factory
-     * @throws Exception             if this dynamic data store cannot be created.
-     */
-    public DynamicDataStore(File homeDir, SegmentFactory segmentFactory) throws Exception {
-        this(homeDir,
-             0,     /* initial level */ 
-             10000, /* entrySize */
-             5,     /* maxEntries */
-             256,   /* segmentFileSizeMB */
-             segmentFactory,
-             0.5,   /* segmentCompactFactor  */
-             0.75,  /* DataStore load factor */
-             new FnvHashFunction());
-    }
-    
-    /**
-     * Creates a dynamic DataStore with the settings below:
-     * 
-     * <pre>
-     *    Entry Size               : 10000
-     *    Max Entries              : 5
-     *    Segment File Size        : 256MB
-     *    Segment Compact Factor   : 0.5
-     *    Store Hash Load Factor   : 0.75
-     *    Store Hash Function      : krati.util.FnvHashFunction
-     * </pre>
-     * 
-     * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
+     * @param initLevel              the level for initializing DataStore
      * @param segmentFactory         the segment factory
      * @throws Exception             if this dynamic data store cannot be created.
      */
@@ -100,8 +74,8 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
                             SegmentFactory segmentFactory) throws Exception {
         this(homeDir,
              initLevel,
-             10000, /* entrySize */
-             5,     /* maxEntries */
+             10000, /* batchSize */
+             5,     /* numSyncBatches */
              256,   /* segmentFileSizeMB */
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -113,15 +87,15 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore with the settings below:
      * 
      * <pre>
-     *    Entry Size               : 10000
-     *    Max Entries              : 5
-     *    Segment File Size        : 256MB
-     *    Segment Compact Factor   : 0.5
-     *    Store Hash Load Factor   : 0.75
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentFileSizeMB    : 256
+     *    segmentCompactFactor : 0.5
+     *    Store hashLoadFactor : 0.75
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
+     * @param initLevel              the level for initializing DataStore
      * @param segmentFactory         the segment factory
      * @param hashFunction           the hash function for mapping keys to indexes
      * @throws Exception             if this dynamic data store cannot be created.
@@ -132,8 +106,8 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
                             HashFunction<byte[]> hashFunction) throws Exception {
         this(homeDir,
              initLevel,
-             10000, /* entrySize */
-             5,     /* maxEntries */
+             10000, /* batchSize */
+             5,     /* numSyncBatches */
              256,   /* segmentFileSizeMB */
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -145,15 +119,15 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore with the settings below:
      * 
      * <pre>
-     *    Entry Size               : 10000
-     *    Max Entries              : 5
-     *    Segment Compact Factor   : 0.5
-     *    Store Hash Load Factor   : 0.75
-     *    Store Hash Function      : krati.util.FnvHashFunction
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentCompactFactor : 0.5
+     *    Store hashLoadFactor : 0.75
+     *    Store hashFunction   : krati.util.FnvHashFunction
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
+     * @param initLevel              the level for initializing DataStore
      * @param segmentFileSizeMB      the size of segment file in MB
      * @param segmentFactory         the segment factory
      * @throws Exception             if this dynamic data store cannot be created.
@@ -164,8 +138,8 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
                             SegmentFactory segmentFactory) throws Exception {
         this(homeDir,
              initLevel,
-             10000, /* entrySize */
-             5,     /* maxEntries */
+             10000, /* batchSize */
+             5,     /* numSyncBatches */
              segmentFileSizeMB,
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -177,13 +151,13 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore with the settings below:
      * 
      * <pre>
-     *    Entry Size               : 10000
-     *    Max Entries              : 5
-     *    Segment Compact Factor   : 0.5
+     *    batchSize            : 10000
+     *    numSyncBatches       : 5
+     *    segmentCompactFactor : 0.5
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
+     * @param initLevel              the level for initializing DataStore
      * @param segmentFileSizeMB      the size of segment file in MB
      * @param segmentFactory         the segment factory
      * @param hashLoadThreshold      the load factor of the underlying address array (hash table)
@@ -198,8 +172,8 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
                             HashFunction<byte[]> hashFunction) throws Exception {
         this(homeDir,
              initLevel,
-             10000, /* entrySize */
-             5,     /* maxEntries */
+             10000, /* batchSize */
+             5,     /* numSyncBatches */
              segmentFileSizeMB,
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -211,29 +185,29 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore with the settings below:
      * 
      * <pre>
-     *    Segment Compact Factor   : 0.5
-     *    Store Hash Load Factor   : 0.75
-     *    Store Hash Function      : krati.util.FnvHashFunction
+     *    segmentCompactFactor : 0.5
+     *    Store hashLoadFactor : 0.75
+     *    Store hashFunction   : krati.util.FnvHashFunction
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
-     * @param entrySize              the redo entry size (i.e., batch size)
-     * @param maxEntries             the number of redo entries required for updating the underlying address array
+     * @param initLevel              the level for initializing DataStore
+     * @param batchSize              the number of updates per update batch
+     * @param numSyncBatches         the number of update batches required for updating the underlying address array
      * @param segmentFileSizeMB      the size of segment file in MB
      * @param segmentFactory         the segment factory
      * @throws Exception             if this dynamic data store cannot be created.
      */
     public DynamicDataStore(File homeDir,
                             int initLevel,
-                            int entrySize,
-                            int maxEntries,
+                            int batchSize,
+                            int numSyncBatches,
                             int segmentFileSizeMB,
                             SegmentFactory segmentFactory) throws Exception {
         this(homeDir,
              initLevel,
-             entrySize,
-             maxEntries,
+             batchSize,
+             numSyncBatches,
              segmentFileSizeMB,
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -245,13 +219,13 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore.
      * 
      * <pre>
-     *    Segment Compact Factor   : 0.5
+     *    segmentCompactFactor : 0.5
      * </pre>
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
-     * @param entrySize              the redo entry size (i.e., batch size)
-     * @param maxEntries             the number of redo entries required for updating the underlying address array
+     * @param initLevel              the level for initializing DataStore
+     * @param batchSize              the number of updates per update batch
+     * @param numSyncBatches         the number of update batches required for updating the underlying address array
      * @param segmentFileSizeMB      the size of segment file in MB
      * @param segmentFactory         the segment factory
      * @param hashLoadThreshold      the load factor of the underlying address array (hash table)
@@ -260,16 +234,16 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      */
     public DynamicDataStore(File homeDir,
                             int initLevel,
-                            int entrySize,
-                            int maxEntries,
+                            int batchSize,
+                            int numSyncBatches,
                             int segmentFileSizeMB,
                             SegmentFactory segmentFactory,
                             double hashLoadThreshold,
                             HashFunction<byte[]> hashFunction) throws Exception {
         this(homeDir,
              initLevel,
-             entrySize,
-             maxEntries,
+             batchSize,
+             numSyncBatches,
              segmentFileSizeMB,
              segmentFactory,
              0.5,   /* segmentCompactFactor  */
@@ -281,9 +255,9 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      * Creates a dynamic DataStore.
      * 
      * @param homeDir                the home directory of DataStore
-     * @param initLevel              the initial level when DataStore is created
-     * @param entrySize              the redo entry size (i.e., batch size)
-     * @param maxEntries             the number of redo entries required for updating the underlying address array
+     * @param initLevel              the level for initializing DataStore
+     * @param batchSize              the number of updates per update batch
+     * @param numSyncBatches         the number of update batches required for updating the underlying address array
      * @param segmentFileSizeMB      the size of segment file in MB
      * @param segmentFactory         the segment factory
      * @param segmentCompactFactor   the load factor of segment, below which a segment is eligible for compaction
@@ -293,18 +267,20 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
      */
     public DynamicDataStore(File homeDir,
                             int initLevel,
-                            int entrySize,
-                            int maxEntries,
+                            int batchSize,
+                            int numSyncBatches,
                             int segmentFileSizeMB,
                             SegmentFactory segmentFactory,
                             double segmentCompactFactor,
                             double hashLoadThreshold,
                             HashFunction<byte[]> hashFunction) throws Exception {
+        this._homeDir = homeDir;
+        
         // Create data store handler
         _dataHandler = new DefaultDataStoreHandler();
         
         // Create dynamic address array
-        _addrArray = createAddressArray(entrySize, maxEntries, homeDir);
+        _addrArray = createAddressArray(batchSize, numSyncBatches, homeDir);
         _unitCapacity = _addrArray.subArrayLength();
         
         if(initLevel > 0) {
@@ -325,10 +301,10 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
         _log.info(getStatus());
     }
     
-    protected DynamicLongArray createAddressArray(int entrySize,
-                                                  int maxEntries,
+    protected DynamicLongArray createAddressArray(int batchSize,
+                                                  int numSyncBatches,
                                                   File homeDirectory) throws Exception {
-        return new DynamicLongArray(entrySize, maxEntries, homeDirectory);
+        return new DynamicLongArray(batchSize, numSyncBatches, homeDirectory);
     }
     
     protected long hash(byte[] key) {
@@ -337,16 +313,6 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
     
     protected long nextScn() {
         return System.currentTimeMillis();
-    }
-    
-    @Override
-    public void sync() throws IOException {
-        _dataArray.sync();
-    }
-    
-    @Override
-    public void persist() throws IOException {
-        _dataArray.persist();
     }
     
     @Override
@@ -399,9 +365,21 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
     }
     
     @Override
+    public synchronized void sync() throws IOException {
+        _dataArray.sync();
+    }
+    
+    @Override
+    public synchronized void persist() throws IOException {
+        _dataArray.persist();
+    }
+    
+    @Override
     public synchronized void clear() throws IOException {
-        _dataArray.clear();
-        _loadCount = 0;
+        if(_dataArray.isOpen()) {
+            _dataArray.clear();
+            _loadCount = 0;
+        }
     }
     
     protected final int getIndex(byte[] key) {
@@ -602,16 +580,20 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
     }
     
     public synchronized void rehash() throws Exception {
-        if(_split > 0) {
-            do {
-                split();
-            } while(_split > 0);
-            sync();
-        } else if(getLoadFactor() > _loadThreshold) {
-            do {
-                split();
-            } while(_split > 0);
-            sync();
+        if(isOpen()) {
+            if(_split > 0) {
+                do {
+                    split();
+                } while (_split > 0);
+                sync();
+            } else if(getLoadFactor() > _loadThreshold) {
+                do {
+                    split();
+                } while (_split > 0);
+                sync();
+            }
+        } else {
+            throw new StoreClosedException();
         }
     }
     
@@ -621,35 +603,79 @@ public class DynamicDataStore implements DataStore<byte[], byte[]>, Closeable
     public String getStatus() {
         StringBuilder buf = new StringBuilder();
         
-        buf.append("level=");
-        buf.append(_level);
-        buf.append(" split=");
-        buf.append(_split);
-        buf.append(" capacity=");
-        buf.append(getCapacity());
-        buf.append(" loadCount=");
-        buf.append(_loadCount);
-        buf.append(" loadFactor=");
-        buf.append(getLoadFactor());
+        buf.append("mode=").append(isOpen() ? Mode.OPEN : Mode.CLOSED);
+        buf.append(" level=").append(_level);
+        buf.append(" split=").append(_split);
+        buf.append(" capacity=").append(getCapacity());
+        buf.append(" loadCount=").append(_loadCount);
+        buf.append(" loadFactor=").append(getLoadFactor());
         
         return buf.toString();
     }
     
     /**
+     * @return the home directory of this data store.
+     */
+    public final File getHomeDir() {
+        return _homeDir;
+    }
+    
+    /**
      * @return the underlying data array.
      */
-    public DataArray getDataArray() {
+    public final DataArray getDataArray() {
         return _dataArray;
     }
-
+    
     @Override
     public Iterator<byte[]> keyIterator() {
-        return new DataStoreKeyIterator(_dataArray, _dataHandler);
+        if(isOpen()) {
+            return new DataStoreKeyIterator(_dataArray, _dataHandler);
+        }
+        
+        throw new StoreClosedException();
     }
-
+    
     @Override
     public Iterator<Entry<byte[], byte[]>> iterator() {
-        return new DataStoreIterator(_dataArray, _dataHandler);
+        if(isOpen()) {
+            return new DataStoreIterator(_dataArray, _dataHandler);
+        }
+        
+        throw new StoreClosedException();
+    }
+    
+    @Override
+    public boolean isOpen() {
+        return _dataArray.isOpen();
+    }
+    
+    @Override
+    public synchronized void open() throws IOException {
+        if(!_dataArray.isOpen()) {
+            try {
+                _dataArray.open();
+                _loadCount = scan();
+                initLinearHashing();
+            } catch (Exception e) {
+                try {
+                    _dataArray.close();
+                } catch(Exception e2) {
+                    _log.error("Failed to close", e2);
+                }
+                
+                throw (e instanceof IOException) ? (IOException)e : new IOException(e);
+            }
+            
+            _log.info(getStatus());
+        }
+    }
+    
+    @Override
+    public synchronized void close() throws IOException {
+        if(_dataArray.isOpen()) {
+            _dataArray.close();
+        }
     }
 
     @Override
