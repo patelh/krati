@@ -65,6 +65,11 @@ public class ChannelWriter implements DataWriter {
     }
     
     @Override
+    public void force() throws IOException {
+        _channel.force(true);
+    }
+    
+    @Override
     public void writeInt(int value) throws IOException {
         _bbInt.position(0);
         _bbInt.putInt(value);

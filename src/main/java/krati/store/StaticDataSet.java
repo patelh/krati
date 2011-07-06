@@ -27,6 +27,7 @@ import krati.util.HashFunction;
  * 
  * @author jwu
  * 
+ * <p>
  * 06/06, 2011 - Added support for Closeable
  */
 public class StaticDataSet implements DataSet<byte[]> {
@@ -187,6 +188,7 @@ public class StaticDataSet implements DataSet<byte[]> {
         AddressArray addressArray = createAddressArray(capacity, batchSize, numSyncBatches, homeDir);
         
         if (addressArray.length() != capacity) {
+            addressArray.close();
             throw new IOException("Capacity expected: " + addressArray.length() + " not " + capacity);
         }
         

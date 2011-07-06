@@ -17,12 +17,13 @@ import krati.core.array.entry.EntryValueLong;
  * 
  * @author jwu
  * 
+ * <p>
  * 05/09, 2011 - added support for Closeable
  * 06/03, 2011 - cleanup _arrayFile file handle
  */
 public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> implements AddressArray, DynamicArray, ArrayExpandListener {
-    private final static int _subArrayBits = 16;
-    private final static int _subArraySize = 1 << _subArrayBits;
+    private final static int _subArrayBits = DynamicConstants.SUB_ARRAY_BITS;
+    private final static int _subArraySize = DynamicConstants.SUB_ARRAY_SIZE;
     private final static Logger _log = Logger.getLogger(DynamicLongArray.class);
     private MemoryLongArray _internalArray;
     
@@ -129,7 +130,8 @@ public class DynamicLongArray extends AbstractRecoverableArray<EntryValueLong> i
     public void expandCapacity(int index) throws Exception {
         if(index < _length) return;
         
-        int newLength = ((index >> _subArrayBits) + 1) * _subArraySize;
+        long capacity = ((index >> _subArrayBits) + 1L) * _subArraySize;
+        int newLength = (capacity < Integer.MAX_VALUE) ? (int)capacity : Integer.MAX_VALUE;
         
         // Reset _length
         _length = newLength;

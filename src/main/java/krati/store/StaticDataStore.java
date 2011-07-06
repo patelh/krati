@@ -29,6 +29,7 @@ import krati.util.HashFunction;
  * 
  * @author jwu
  * 
+ * <p>
  * 06/04, 2011 - Added support for Closeable
  * 06/04, 2011 - Added getHomeDir
  */
@@ -192,6 +193,7 @@ public class StaticDataStore implements DataStore<byte[], byte[]> {
         AddressArray addressArray = createAddressArray(capacity, batchSize, numSyncBatches, homeDir);
         
         if (addressArray.length() != capacity) {
+            addressArray.close();
             throw new IOException("Capacity expected: " + addressArray.length() + " not " + capacity);
         }
         
